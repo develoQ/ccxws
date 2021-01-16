@@ -14,6 +14,7 @@ class BitFlyerClient extends BasicClient {
     super(wssPath, "BitFlyer", undefined, watcherMs);
     this.hasTickers = true;
     this.hasTrades = true;
+    this.hasLevel2Snapshots = true;
     this.hasLevel2Updates = true;
     this.requestSnapshot = true;
     this._restSem = semaphore(1);
@@ -53,6 +54,17 @@ class BitFlyerClient extends BasicClient {
     );
   }
 
+  _sendSubLevel2Snapshots(remote_id) {
+    this._wss.send(
+      JSON.stringify({
+        method: "subscribe",
+        params: {
+          channel: `lightning_board_snapshot_${remote_id}`,
+        },
+      })
+    );
+  }
+
   _sendSubLevel2Updates(remote_id) {
     // this method is trigger on connections events... so safe to send snapshot request here
     if (this.requestSnapshot) this._requestLevel2Snapshot(this._level2UpdateSubs.get(remote_id));
@@ -77,6 +89,17 @@ class BitFlyerClient extends BasicClient {
     );
   }
 
+  _sendUnsubLevel2Snapshots(remote_id) {
+    this._wss.send(
+      JSON.stringify({
+        method: "unsubscribe",
+        params: {
+          channel: `lightning_board_snapshot_${remote_id}`,
+        },
+      })
+    );
+  }
+  
   _sendUnsubLevel2Updates(remote_id) {
     this._wss.send(
       JSON.stringify({
@@ -115,8 +138,21 @@ class BitFlyerClient extends BasicClient {
       }
     }
 
-    // orderbook
-    if (channel.startsWith("lightning_board_")) {
+    // orderbook-snapshot
+    if (channel.startsWith("lightning_board_snapshot_")) {
+      let remote_id = channel.substr("lightning_board_snapshot_".length);
+      let market = this._level2SnapshotSubs.get(remote_id);
+      if (!market) return;
+
+      let snapshot = this._createLevel2Snapshot(message, market);
+      this.emit("l2snapshot", snapshot, market);
+    }
+
+    // orderbook-update
+    if (
+      channel.startsWith("lightning_board_") &&
+      !channel.startsWith("lightning_board_snapshot_")
+    ) {
       let remote_id = channel.substr("lightning_board_".length);
       let market = this._level2UpdateSubs.get(remote_id);
       if (!market) return;
@@ -177,6 +213,19 @@ class BitFlyerClient extends BasicClient {
       amount: size.toFixed(8),
       buyOrderId: buy_child_order_acceptance_id,
       sellOrderId: sell_child_order_acceptance_id,
+    });
+  }
+
+  _createLevel2Snapshot(msg, market) {
+    let asks = msg.asks.map(p => new Level2Point(p.price.toFixed(8), p.size.toFixed(8)));
+    let bids = msg.bids.map(p => new Level2Point(p.price.toFixed(8), p.size.toFixed(8)));
+
+    return new Level2Snapshot({
+      exchange: "bitFlyer",
+      base: market.base,
+      quote: market.quote,
+      asks,
+      bids,
     });
   }
 

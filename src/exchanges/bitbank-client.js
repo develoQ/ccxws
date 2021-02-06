@@ -91,7 +91,7 @@ class BitbankClient extends BasicClient {
         const trades = [];
         for (let tx of msg.transactions) {
           let trade = this._constructTradesFromMessage(tx, market);
-          trades.append(trade);
+          trades.push(trade);
         }
         this.emit("trade", trades, market);
       } else {

@@ -9,6 +9,7 @@ class BitbankClient extends BasicClient {
   constructor({
     wssPath = "wss://stream.bitbank.cc/socket.io/?EIO=3&transport=websocket",
     watcherMs,
+    isArrayedTrade = false
   } = {}) {
     super(wssPath, "bitbank", undefined, watcherMs);
 
@@ -16,6 +17,8 @@ class BitbankClient extends BasicClient {
     this.hasTrades = true;
     this.hasLevel2Snapshots = true;
     this.hasLevel2Updates = true;
+    
+    this.isArrayedTrade = isArrayedTrade;
   }
 
   _sendSubTicker(remote_id) {
@@ -82,12 +85,20 @@ class BitbankClient extends BasicClient {
     // trade
     if (room.startsWith("transactions_")) {
       const id = room.replace("transactions_", "");
-      for (let tx of msg.transactions) {
-        let market = this._tradeSubs.get(id);
-        if (!market) return;
-
-        let trade = this._constructTradesFromMessage(tx, market);
-        this.emit("trade", trade, market);
+      let market = this._tradeSubs.get(id);
+      if (!market) return;
+      if (this.isArrayedTrade) {
+        const trades = [];
+        for (let tx of msg.transactions) {
+          let trade = this._constructTradesFromMessage(tx, market);
+          trades.append(trade);
+        }
+        this.emit("trade", trades, market);
+      } else {
+        for (let tx of msg.transactions) {
+          let trade = this._constructTradesFromMessage(tx, market);
+          this.emit("trade", trade, market);
+        }
       }
       return;
     }
